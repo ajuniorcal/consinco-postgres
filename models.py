@@ -67,3 +67,22 @@ class Venda(Base):
     quantidade = Column(Float)
     valor_unitario = Column(Float)
     data_venda = Column(DateTime)
+
+
+# =========================
+# logs
+# =========================
+class ETLLog(Base):
+    __tablename__ = "etl_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entidade = Column(String, nullable=False)
+    inicio = Column(DateTime, nullable=False)
+    fim = Column(DateTime, nullable=False)
+    qt_processados = Column(Integer, nullable=False)
+    qt_novos = Column(Integer, nullable=False)
+    qt_atualizados = Column(Integer, nullable=False)
+    qt_erros = Column(Integer, nullable=False)
+    duracao_ms = Column(Integer, nullable=False)
+    status = Column(String, nullable=False)
+    maior_descricao = Column(String)

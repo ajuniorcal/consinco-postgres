@@ -1,11 +1,13 @@
 import os
+import time
 import requests
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import (
-    Produto, Fornecedor, EstoqueAtual, EstoqueHistorico, Venda
+    Produto, Fornecedor, EstoqueAtual, EstoqueHistorico, Venda, ETLLog
 )
 from utils.dedup import ignore_duplicates
+from datetime import datetime
 
 API_URL = os.getenv("SOURCE_API_URL")
 
@@ -43,6 +45,28 @@ def fetch_all(endpoint: str):
 
 
 # =============================================
+# FUNÇÃO PARA GRAVAR LOG POR ENTIDADE
+# =============================================
+def salvar_log(db, entidade, stats, maior_descricao, inicio, fim):
+    duracao_ms = int((fim - inicio).total_seconds() * 1000)
+
+    log = ETLLog(
+        entidade=entidade,
+        inicio=inicio,
+        fim=fim,
+        qt_processados=stats["processados"],
+        qt_novos=stats["novos"],
+        qt_atualizados=stats["atualizados"],
+        qt_erros=stats["erros"],
+        duracao_ms=duracao_ms,
+        status="sucesso" if stats["erros"] == 0 else "parcial",
+        maior_descricao=maior_descricao
+    )
+
+    db.add(log)
+
+
+# =============================================
 # ROTINA ETL PRINCIPAL
 # =============================================
 def etl_run():
@@ -50,19 +74,31 @@ def etl_run():
 
     db: Session = SessionLocal()
 
-    # 1 – Buscar dados da API fake
-    produtos = fetch_all("produtos")
-    fornecedores = fetch_all("fornecedores")
-    estoque_atual = fetch_all("estoque-atual")
-    estoque_hist = fetch_all("estoque-historico")
-    vendas = fetch_all("vendas")
+    entidades = [
+        ("produtos", Produto),
+        ("fornecedores", Fornecedor),
+        ("estoque-atual", EstoqueAtual),
+        ("estoque-historico", EstoqueHistorico),
+        ("vendas", Venda),
+    ]
 
-    # 2 – Inserir no banco
-    ignore_duplicates(db, Produto, produtos)
-    ignore_duplicates(db, Fornecedor, fornecedores)
-    ignore_duplicates(db, EstoqueAtual, estoque_atual)
-    ignore_duplicates(db, EstoqueHistorico, estoque_hist)
-    ignore_duplicates(db, Venda, vendas)
+    for endpoint, model in entidades:
+        inicio = datetime.now()
+
+        dados = fetch_all(endpoint)
+        stats = ignore_duplicates(db, model, dados)
+
+        # Maior descrição 
+        if endpoint == "produtos":
+            maior = max((x.get("descricao", "") for x in dados), key=len, default="")
+        elif endpoint == "fornecedores":
+            maior = max((x.get("nome", "") for x in dados), key=len, default="")
+        else:
+            maior = ""
+
+        fim = datetime.now()
+
+        salvar_log(db, endpoint, stats, maior, inicio, fim)
 
     db.commit()
     db.close()
